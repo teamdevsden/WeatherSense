@@ -19,6 +19,7 @@ const CitizenReport = () => {
     description: '',
     coordinates: [72.8777, 19.0760], // [lng, lat]
     photoUrl: '',
+    videoUrl: '',
   });
 
   const [locationStatus, setLocationStatus] = useState('');
@@ -93,8 +94,8 @@ const CitizenReport = () => {
     const errs = {};
     if (!formData.name.trim()) errs.name = 'Please provide your full name';
     if (!formData.city) errs.city = 'Please select your city';
-    if (!formData.description || formData.description.trim().length < 50) {
-      errs.description = `Description must be at least 50 characters long (currently ${formData.description.trim().length}/50)`;
+    if (!formData.description || formData.description.trim().length < 20) {
+      errs.description = `Description must be at least 20 characters long (currently ${formData.description.trim().length}/20)`;
     }
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -125,17 +126,20 @@ const CitizenReport = () => {
         eventType: formData.eventType,
         description: formData.description,
         photoUrl: formData.photoUrl || 'https://images.unsplash.com/photo-1514632595-4944383f2737?w=600&auto=format&fit=crop&q=80',
+        videoUrl: formData.videoUrl || '',
         eventTimestamp: formData.eventTimestamp,
       });
 
       if (res.data && res.data.success) {
         setSuccessReport({
-          code: res.data.reportCode || `#WS-${Math.floor(1000 + Math.random() * 9000)}`,
+          code: res.data.reportCode || `WS-${Math.floor(10000 + Math.random() * 90000)}`,
           city: formData.city,
           state: formData.state,
           eventType: formData.eventType,
+          weatherEventId: res.data.weatherEventId,
+          aiEvaluation: res.data.aiEvaluation,
         });
-        toast.success('Report dispatched to IMD Emergency Response Center');
+        toast.success('Report dispatched to IMD National Central Grid');
       }
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to submit report');
@@ -156,6 +160,7 @@ const CitizenReport = () => {
       description: '',
       coordinates: [72.8777, 19.0760],
       photoUrl: '',
+      videoUrl: '',
     });
     setPhotoPreview(null);
     setLocationStatus('');
@@ -195,35 +200,61 @@ const CitizenReport = () => {
           </div>
 
           <h2 style={{ fontSize: '1.8rem', fontWeight: 800, color: '#1B2A4A', marginBottom: '8px' }}>
-            Weather Report Successfully Logged!
+            Weather Report Submitted Successfully!
           </h2>
           <p style={{ color: '#64748B', fontSize: '1rem', marginBottom: '24px' }}>
-            Your eyewitness meteorological report has been dispatched to IMD regional radar validators.
+            Your eyewitness meteorological report has been ingested and queued for AI verification.
           </p>
 
           <div
             style={{
-              display: 'inline-block',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
               backgroundColor: '#F8FAFC',
               border: '1.5px dashed #CBD5E1',
-              padding: '16px 28px',
+              padding: '18px 28px',
               borderRadius: '12px',
               marginBottom: '28px',
+              gap: '6px',
             }}
           >
-            <span style={{ fontSize: '0.8rem', color: '#64748B', fontWeight: 600, display: 'block' }}>
-              NATIONAL INCIDENT REFERENCE CODE
+            <span style={{ fontSize: '0.8rem', color: '#64748B', fontWeight: 600 }}>
+              NATIONAL REPORT ID
             </span>
-            <span style={{ fontSize: '1.9rem', fontWeight: 900, color: 'var(--primary-accent)', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
+            <span style={{ fontSize: '2rem', fontWeight: 900, color: 'var(--primary-accent)', letterSpacing: '0.08em', fontFamily: 'monospace' }}>
               {successReport.code}
+            </span>
+            <span
+              style={{
+                fontSize: '0.8rem',
+                fontWeight: 700,
+                color: '#D97706',
+                backgroundColor: '#FFFBEB',
+                padding: '3px 12px',
+                borderRadius: '12px',
+                border: '1px solid #FDE68A',
+                marginTop: '4px',
+              }}
+            >
+              Status: Pending AI Verification
             </span>
           </div>
 
-          <div style={{ display: 'flex', justifyContent: 'center', gap: '14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', gap: '14px', flexWrap: 'wrap' }}>
+            {successReport.weatherEventId && (
+              <button
+                type="button"
+                onClick={() => navigate(`/events/${successReport.weatherEventId}`)}
+                className="btn-primary"
+              >
+                📄 View Incident Dossier
+              </button>
+            )}
             <button type="button" onClick={handleReset} className="btn-secondary">
               ➕ Submit Another Report
             </button>
-            <button type="button" onClick={() => navigate('/dashboard')} className="btn-primary">
+            <button type="button" onClick={() => navigate('/dashboard')} className="btn-secondary">
               📊 Return to Dashboard
             </button>
           </div>
@@ -255,13 +286,13 @@ const CitizenReport = () => {
                 marginBottom: '10px',
               }}
             >
-              <span>🇮🇳 Emergency Weather Incident Reporting</span>
+              <span>🇮🇳 National Citizen Weather Intelligence</span>
             </div>
             <h2 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#1B2A4A' }}>
-              Submit Extreme Weather Incident
+              Submit Eyewitness Weather Incident
             </h2>
             <p style={{ color: '#64748B', fontSize: '0.925rem', marginTop: '4px' }}>
-              Provide real-time eyewitness photos & GPS coordinates to alert disaster response authorities.
+              Provide real-time photos, video & GPS coordinates to alert meteorologists and disaster response teams.
             </p>
           </div>
 
@@ -372,20 +403,20 @@ const CitizenReport = () => {
               </div>
             </div>
 
-            {/* Description (min 50 chars) */}
+            {/* Description (min 20 chars) */}
             <div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
                 <label className="form-label" style={{ margin: 0 }}>
-                  Eyewitness Observation & Situation Details *
+                  Eyewitness Observation & Incident Details *
                 </label>
                 <span
                   style={{
                     fontSize: '0.78rem',
-                    color: formData.description.length >= 50 ? '#059669' : '#DC2626',
+                    color: formData.description.length >= 20 ? '#059669' : '#DC2626',
                     fontWeight: 600,
                   }}
                 >
-                  {formData.description.length}/50 characters minimum
+                  {formData.description.length}/20 characters minimum
                 </span>
               </div>
               <textarea
@@ -398,27 +429,40 @@ const CitizenReport = () => {
               {errors.description && <div className="form-error">{errors.description}</div>}
             </div>
 
-            {/* Photo Upload & Preview */}
-            <div>
-              <label className="form-label">Attach Photo Proof (Optional)</label>
-              <input
-                type="file"
-                accept="image/*"
-                onChange={handlePhotoUpload}
-                style={{
-                  width: '100%',
-                  padding: '8px',
-                  borderRadius: '8px',
-                  border: '1px dashed #CBD5E1',
-                  backgroundColor: '#F8FAFC',
-                  fontSize: '0.85rem',
-                }}
-              />
-              {photoPreview && (
-                <div style={{ marginTop: '10px', position: 'relative', width: '120px', height: '100px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #CBD5E1' }}>
-                  <img src={photoPreview} alt="Upload preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                </div>
-              )}
+            {/* Photo & Video Attachment */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              <div>
+                <label className="form-label">Attach Photo Proof (Optional)</label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handlePhotoUpload}
+                  style={{
+                    width: '100%',
+                    padding: '8px',
+                    borderRadius: '8px',
+                    border: '1px dashed #CBD5E1',
+                    backgroundColor: '#F8FAFC',
+                    fontSize: '0.85rem',
+                  }}
+                />
+                {photoPreview && (
+                  <div style={{ marginTop: '10px', position: 'relative', width: '120px', height: '100px', borderRadius: '8px', overflow: 'hidden', border: '1px solid #CBD5E1' }}>
+                    <img src={photoPreview} alt="Upload preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="form-label">Video Clip Link (Optional)</label>
+                <input
+                  type="url"
+                  className="form-input"
+                  placeholder="https://..."
+                  value={formData.videoUrl}
+                  onChange={(e) => setFormData({ ...formData, videoUrl: e.target.value })}
+                />
+              </div>
             </div>
 
             {/* Submit CTA */}
@@ -435,7 +479,7 @@ const CitizenReport = () => {
                   borderRadius: '10px',
                 }}
               >
-                {isSubmitting ? 'Submitting to Central Registry...' : '🚀 Submit Incident Report to IMD'}
+                {isSubmitting ? 'Processing through AI Verification...' : '🚀 Submit Report & Generate WS-ID'}
               </button>
             </div>
           </form>

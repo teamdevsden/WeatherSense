@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { INDIAN_STATES, EVENT_TYPES_CONFIG } from '../utils/indianCities';
+import { INDIAN_STATES, EVENT_TYPES_CONFIG, SOURCE_CONFIGS } from '../utils/indianCities';
 
 const FilterPanel = ({ filters, onFilterChange, onReset, compact = false }) => {
   const [localFilters, setLocalFilters] = useState(filters);
@@ -30,6 +30,7 @@ const FilterPanel = ({ filters, onFilterChange, onReset, compact = false }) => {
       state: 'All States',
       type: 'all',
       status: 'all',
+      source: 'all',
       startDate: '',
       endDate: '',
       search: '',
@@ -52,9 +53,9 @@ const FilterPanel = ({ filters, onFilterChange, onReset, compact = false }) => {
         marginBottom: '20px',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-        <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#1B2A4A', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span>🔍</span> Filter & Analyze Weather Events
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
+        <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#1B2A4A', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+          <span>🔍</span> Multi-Dimensional Intelligence Filters
         </h4>
         <div style={{ display: 'flex', gap: '8px' }}>
           <button
@@ -79,18 +80,18 @@ const FilterPanel = ({ filters, onFilterChange, onReset, compact = false }) => {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '16px',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+          gap: '14px',
           marginBottom: '16px',
         }}
       >
         {/* Search Keyword */}
         <div>
-          <label className="form-label">Search Keyword / City</label>
+          <label className="form-label">Search City / #Hashtag</label>
           <input
             type="text"
             className="form-input"
-            placeholder="e.g. Mumbai, Flood, #Rain"
+            placeholder="e.g. Pune, #HeavyRain, Flood"
             value={localFilters.search || ''}
             onChange={(e) => handleChange('search', e.target.value)}
           />
@@ -98,7 +99,7 @@ const FilterPanel = ({ filters, onFilterChange, onReset, compact = false }) => {
 
         {/* State Dropdown */}
         <div>
-          <label className="form-label">State / Region</label>
+          <label className="form-label">State / UT (36 Regions)</label>
           <select
             className="form-select"
             value={localFilters.state || 'All States'}
@@ -109,6 +110,38 @@ const FilterPanel = ({ filters, onFilterChange, onReset, compact = false }) => {
                 {st}
               </option>
             ))}
+          </select>
+        </div>
+
+        {/* Source Filter */}
+        <div>
+          <label className="form-label">Data Ingestion Source</label>
+          <select
+            className="form-select"
+            value={localFilters.source || 'all'}
+            onChange={(e) => handleChange('source', e.target.value)}
+          >
+            <option value="all">All 6 Ingestion Streams</option>
+            {SOURCE_CONFIGS.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.icon} {s.shortName} {s.isSimulated ? '(Demo)' : ''}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Verification Status */}
+        <div>
+          <label className="form-label">Verification Status</label>
+          <select
+            className="form-select"
+            value={localFilters.status || 'all'}
+            onChange={(e) => handleChange('status', e.target.value)}
+          >
+            <option value="all">All Statuses (Verified + Pending + Misleading)</option>
+            <option value="verified">✅ Verified Incidents</option>
+            <option value="pending">⏳ Pending Review</option>
+            <option value="fake">❌ Misleading / Flagged</option>
           </select>
         </div>
 
@@ -133,21 +166,6 @@ const FilterPanel = ({ filters, onFilterChange, onReset, compact = false }) => {
             onChange={(e) => handleChange('endDate', e.target.value)}
           />
         </div>
-
-        {/* Verification Status */}
-        <div>
-          <label className="form-label">Verification Status</label>
-          <select
-            className="form-select"
-            value={localFilters.status || 'all'}
-            onChange={(e) => handleChange('status', e.target.value)}
-          >
-            <option value="all">All Statuses (Verified + Pending + Fake)</option>
-            <option value="verified">✅ Verified Only</option>
-            <option value="pending">⏳ Pending Review</option>
-            <option value="fake">❌ Flagged / Fake</option>
-          </select>
-        </div>
       </div>
 
       {/* Event Types Multi-Select Badges */}
@@ -160,7 +178,7 @@ const FilterPanel = ({ filters, onFilterChange, onReset, compact = false }) => {
             type="button"
             onClick={() => handleChange('type', 'all')}
             style={{
-              padding: '6px 14px',
+              padding: '5px 12px',
               borderRadius: '20px',
               border: '1.5px solid',
               borderColor: localFilters.type === 'all' || !localFilters.type ? '#E8640C' : '#E2E8F0',
@@ -182,7 +200,7 @@ const FilterPanel = ({ filters, onFilterChange, onReset, compact = false }) => {
                 type="button"
                 onClick={() => handleTypeToggle(cfg.key)}
                 style={{
-                  padding: '6px 12px',
+                  padding: '5px 12px',
                   borderRadius: '20px',
                   border: '1.5px solid',
                   borderColor: isSelected ? cfg.color : '#E2E8F0',

@@ -25,6 +25,7 @@ const EventsFeed = () => {
       if (activeFilters.state && activeFilters.state !== 'All States') params.append('state', activeFilters.state);
       if (activeFilters.type && activeFilters.type !== 'all') params.append('type', activeFilters.type);
       if (activeFilters.status && activeFilters.status !== 'all') params.append('status', activeFilters.status);
+      if (activeFilters.source && activeFilters.source !== 'all') params.append('source', activeFilters.source);
       if (activeFilters.startDate) params.append('startDate', activeFilters.startDate);
       if (activeFilters.endDate) params.append('endDate', activeFilters.endDate);
       if (activeFilters.search) params.append('search', activeFilters.search);

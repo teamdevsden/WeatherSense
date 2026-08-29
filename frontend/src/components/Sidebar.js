@@ -11,20 +11,27 @@ const Sidebar = ({ isCollapsed, onToggleCollapse, isMobileOpen, onCloseMobile })
     navigate('/login');
   };
 
-  // Role-tailored navigation items
-  const navItems = isAdmin
-    ? [
-        { path: '/dashboard', label: 'Dashboard', icon: '📊' },
-        { path: '/map', label: 'GIS Map View', icon: '🗺️' },
-        { path: '/events', label: 'All Incidents Registry', icon: '⚡' },
-        { path: '/analytics', label: 'Big Data Analytics', icon: '📈' },
-      ]
-    : [
-        { path: '/dashboard', label: 'Dashboard', icon: '📊' },
-        { path: '/map', label: 'Live Weather Map', icon: '🗺️' },
-        { path: '/events', label: 'Weather Alerts Feed', icon: '⚡' },
-        { path: '/citizen-report', label: '📢 Submit Weather Report', icon: '📝', highlight: true },
-      ];
+  // Role-Based Navigation Configuration
+  const citizenNavItems = [
+    { path: '/dashboard', label: 'Public Weather Portal', icon: '🏠' },
+    { path: '/citizen-report', label: 'Submit Incident Report', icon: '📢', highlight: true },
+    { path: '/my-reports', label: 'My Submissions Track', icon: '📋' },
+    { path: '/map', label: 'Public Hazard Map', icon: '🗺️' },
+    { path: '/events', label: 'Official Bulletins', icon: '⚡' },
+    { path: '/safety-guidelines', label: 'Emergency Helplines', icon: '🛡️' },
+  ];
+
+  const adminNavItems = [
+    { path: '/dashboard', label: 'Operations Console', icon: '📊' },
+    { path: '/admin', label: 'Disaster Governance', icon: '🛡️', highlight: true },
+    { path: '/events', label: 'Incidents Registry', icon: '⚡' },
+    { path: '/map', label: 'GIS Command Map', icon: '🗺️' },
+    { path: '/data-sources', label: 'Data Sources (6)', icon: '📡' },
+    { path: '/ai-intelligence', label: 'AI Intelligence Engine', icon: '🤖' },
+    { path: '/analytics', label: 'Big Data Analytics', icon: '📈' },
+  ];
+
+  const navItems = isAdmin ? adminNavItems : citizenNavItems;
 
   return (
     <>
@@ -89,8 +96,8 @@ const Sidebar = ({ isCollapsed, onToggleCollapse, isMobileOpen, onCloseMobile })
                 <h1 style={{ fontSize: '1.05rem', fontWeight: 800, color: '#FFFFFF', letterSpacing: '-0.02em', lineHeight: 1.1 }}>
                   WeatherSense
                 </h1>
-                <span style={{ fontSize: '0.7rem', color: '#CBD5E1', fontWeight: 600, letterSpacing: '0.03em' }}>
-                  IMD • MoES Portal
+                <span style={{ fontSize: '0.7rem', color: isAdmin ? '#FDBA74' : '#CBD5E1', fontWeight: 700, letterSpacing: '0.03em' }}>
+                  {isAdmin ? '🛡️ IMD Officer Command' : '🇮🇳 Citizen Weather Portal'}
                 </span>
               </div>
             )}
@@ -108,55 +115,27 @@ const Sidebar = ({ isCollapsed, onToggleCollapse, isMobileOpen, onCloseMobile })
                 display: 'flex',
                 alignItems: 'center',
                 gap: '12px',
-                padding: isCollapsed ? '12px 0' : '11px 14px',
+                padding: isCollapsed ? '12px 0' : '10px 14px',
                 justifyContent: isCollapsed ? 'center' : 'flex-start',
                 borderRadius: '8px',
                 color: isActive ? '#FFFFFF' : item.highlight ? '#FDBA74' : '#CBD5E1',
                 backgroundColor: isActive
                   ? 'var(--primary-accent)'
                   : item.highlight
-                  ? 'rgba(232, 100, 12, 0.15)'
+                  ? 'rgba(232, 100, 12, 0.16)'
                   : 'transparent',
                 border: item.highlight && !isActive ? '1px dashed rgba(232, 100, 12, 0.5)' : '1px solid transparent',
-                fontWeight: isActive || item.highlight ? 600 : 500,
-                fontSize: '0.885rem',
+                fontWeight: isActive || item.highlight ? 700 : 500,
+                fontSize: '0.85rem',
                 transition: 'all 0.2s ease',
                 textDecoration: 'none',
               })}
               title={isCollapsed ? item.label : undefined}
             >
-              <span style={{ fontSize: '1.2rem', minWidth: '24px', textAlign: 'center' }}>{item.icon}</span>
+              <span style={{ fontSize: '1.15rem', minWidth: '24px', textAlign: 'center' }}>{item.icon}</span>
               {!isCollapsed && <span>{item.label}</span>}
             </NavLink>
           ))}
-
-          {/* Admin link */}
-          {isAdmin && (
-            <NavLink
-              to="/admin"
-              onClick={onCloseMobile}
-              style={({ isActive }) => ({
-                display: 'flex',
-                alignItems: 'center',
-                gap: '12px',
-                padding: isCollapsed ? '12px 0' : '11px 14px',
-                justifyContent: isCollapsed ? 'center' : 'flex-start',
-                borderRadius: '8px',
-                color: isActive ? '#FFFFFF' : '#FCA5A5',
-                backgroundColor: isActive ? '#DC2626' : 'rgba(239, 68, 68, 0.12)',
-                fontWeight: isActive ? 600 : 500,
-                fontSize: '0.885rem',
-                marginTop: '10px',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                transition: 'all 0.2s ease',
-                textDecoration: 'none',
-              })}
-              title={isCollapsed ? 'Admin Governance Portal' : undefined}
-            >
-              <span style={{ fontSize: '1.2rem', minWidth: '24px', textAlign: 'center' }}>🛡️</span>
-              {!isCollapsed && <span>Admin Governance</span>}
-            </NavLink>
-          )}
         </nav>
 
         {/* Bottom Profile & Toggle */}
@@ -200,8 +179,8 @@ const Sidebar = ({ isCollapsed, onToggleCollapse, isMobileOpen, onCloseMobile })
                 <div style={{ fontSize: '0.825rem', fontWeight: 600, color: '#FFFFFF', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                   {user.name}
                 </div>
-                <div style={{ fontSize: '0.7rem', color: '#94A3B8', textTransform: 'capitalize' }}>
-                  {user.role} {isAdmin ? '• Super Admin' : ''}
+                <div style={{ fontSize: '0.7rem', color: isAdmin ? '#FCA5A5' : '#86EFAC', textTransform: 'capitalize', fontWeight: 600 }}>
+                  {isAdmin ? '🛡️ IMD Officer' : '👤 Citizen User'}
                 </div>
               </div>
             </div>

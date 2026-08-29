@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
 import { useWeather } from '../context/WeatherContext';
 import EventTypeBadge from '../components/EventTypeBadge';
 import VerificationBadge from '../components/VerificationBadge';
-import { EVENT_TYPES_CONFIG } from '../utils/indianCities';
+import { EVENT_TYPES_CONFIG, getSourceMeta } from '../utils/indianCities';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
 
@@ -122,6 +123,7 @@ const AdminPanel = () => {
       toast.success(`Category reassigned to ${newCategory.toUpperCase()}`);
       fetchPendingEvents();
       fetchAllEvents();
+      refreshData();
     } catch (err) {
       toast.error('Category update failed');
     }
@@ -163,7 +165,7 @@ const AdminPanel = () => {
             </h2>
           </div>
           <p style={{ fontSize: '0.85rem', color: '#64748B', marginTop: '2px' }}>
-            Authorized Administrator: <strong>{user?.name}</strong> • Level 1 Incident Dispatch & AI Verification
+            Authorized Administrator: <strong>{user?.name}</strong> • Level 1 Incident Dispatch & Explainable AI Verification
           </p>
         </div>
 
@@ -175,11 +177,11 @@ const AdminPanel = () => {
           </div>
           <div style={{ backgroundColor: '#ECFDF5', border: '1px solid #A7F3D0', padding: '8px 14px', borderRadius: '8px' }}>
             <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#059669', textTransform: 'uppercase' }}>Verified Total</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#065F46' }}>{stats.verifiedCount || 9203}</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#065F46' }}>{stats.verifiedCount || 52}</div>
           </div>
           <div style={{ backgroundColor: '#FEF2F2', border: '1px solid #FECACA', padding: '8px 14px', borderRadius: '8px' }}>
             <div style={{ fontSize: '0.72rem', fontWeight: 700, color: '#DC2626', textTransform: 'uppercase' }}>Fake Suppressed</div>
-            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#991B1B' }}>{stats.fakeCount || 10}</div>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color: '#991B1B' }}>{stats.fakeCount || 7}</div>
           </div>
         </div>
       </div>
@@ -242,7 +244,7 @@ const AdminPanel = () => {
 
       {/* Tab 1: Pending Verification */}
       {activeTab === 'pending' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {loading ? (
             <div style={{ textAlign: 'center', padding: '50px 20px', color: '#64748B' }}>Loading pending events...</div>
           ) : pendingEvents.length === 0 ? (
@@ -254,89 +256,157 @@ const AdminPanel = () => {
               </p>
             </div>
           ) : (
-            pendingEvents.map((ev) => (
-              <div
-                key={ev._id}
-                className="ws-card"
-                style={{
-                  padding: '18px 22px',
-                  backgroundColor: '#FFFFFF',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '12px',
-                  borderLeft: '4px solid #F59E0B',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
-                  <div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '2px 6px', borderRadius: '4px', backgroundColor: '#F1F5F9', color: '#475569' }}>
-                        Source: {ev.source.toUpperCase()}
-                      </span>
-                      <EventTypeBadge type={ev.eventType} size="small" />
-                      <VerificationBadge status={ev.verificationStatus} size="small" />
-                    </div>
-                    <h4 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1F2937' }}>{ev.title}</h4>
-                    <div style={{ fontSize: '0.8rem', color: '#64748B' }}>
-                      📍 <strong>{ev.city}</strong>, {ev.state} • 🕒 {format(new Date(ev.timestamp), 'dd MMM yyyy, hh:mm a')}
-                    </div>
-                  </div>
+            pendingEvents.map((ev) => {
+              const src = getSourceMeta(ev.source);
+              const factors = ev.verificationFactors || {
+                sourceReliability: 75,
+                locationConsistency: 85,
+                weatherConsistency: 80,
+                contentAnalysis: 85,
+                duplicateSimilarity: 70,
+              };
 
-                  {/* AI Confidence Meter */}
-                  <div style={{ textAlign: 'right' }}>
-                    <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600 }}>ML Trust Confidence</div>
-                    <div style={{ fontSize: '1.1rem', fontWeight: 800, color: (ev.mlConfidenceScore || 0.8) >= 0.7 ? '#059669' : '#D97706' }}>
-                      {Math.round((ev.mlConfidenceScore || 0.8) * 100)}%
-                    </div>
-                  </div>
-                </div>
-
-                <p style={{ fontSize: '0.885rem', color: '#4B5563', lineHeight: 1.5 }}>{ev.description}</p>
-
-                {/* Bottom Action Strip: Reassign Category & Moderation Buttons */}
+              return (
                 <div
+                  key={ev._id}
+                  className="ws-card"
                   style={{
+                    padding: '20px 24px',
+                    backgroundColor: '#FFFFFF',
                     display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    flexWrap: 'wrap',
-                    gap: '12px',
-                    paddingTop: '12px',
-                    borderTop: '1px solid #F1F5F9',
+                    flexDirection: 'column',
+                    gap: '14px',
+                    borderLeft: '4px solid #F59E0B',
                   }}
                 >
-                  {/* Category Reassign Dropdown */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                    <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748B' }}>Reassign Hazard:</span>
-                    <select
-                      className="form-select"
-                      style={{ padding: '4px 8px', fontSize: '0.8rem', width: 'auto' }}
-                      value={ev.eventType}
-                      onChange={(e) => handleCategoryReassign(ev._id, e.target.value)}
-                    >
-                      {EVENT_TYPES_CONFIG.map((cfg) => (
-                        <option key={cfg.key} value={cfg.key}>
-                          {cfg.icon} {cfg.label}
-                        </option>
-                      ))}
-                    </select>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px' }}>
+                    <div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', flexWrap: 'wrap' }}>
+                        <span
+                          style={{
+                            fontSize: '0.75rem',
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            backgroundColor: src.bg,
+                            color: src.color,
+                            border: `1px solid ${src.border}`,
+                          }}
+                        >
+                          {src.icon} {src.name} {src.isSimulated ? '(Demo)' : ''}
+                        </span>
+                        <EventTypeBadge type={ev.eventType} size="small" />
+                        <VerificationBadge status={ev.verificationStatus} size="small" />
+                        {ev.isDuplicate && (
+                          <span style={{ fontSize: '0.72rem', backgroundColor: '#FFFBEB', color: '#D97706', padding: '2px 6px', borderRadius: '4px', fontWeight: 700 }}>
+                            ⚠️ Duplicate Warning ({ev.reportCount || 2} reports merged)
+                          </span>
+                        )}
+                      </div>
+                      <h4 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#1F2937' }}>{ev.title}</h4>
+                      <div style={{ fontSize: '0.8rem', color: '#64748B' }}>
+                        📍 <strong>{ev.city}</strong>, {ev.state} • 🕒 {format(new Date(ev.timestamp), 'dd MMM yyyy, hh:mm a')}
+                      </div>
+                    </div>
+
+                    {/* AI Confidence Meter */}
+                    <div style={{ textAlign: 'right' }}>
+                      <div style={{ fontSize: '0.75rem', color: '#64748B', fontWeight: 600 }}>AI Authenticity Score</div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 900, color: (ev.mlConfidenceScore || 0.8) >= 0.7 ? '#059669' : '#D97706' }}>
+                        {Math.round((ev.mlConfidenceScore || 0.8) * 100)}%
+                      </div>
+                    </div>
                   </div>
 
-                  {/* Action Buttons */}
-                  <div style={{ display: 'flex', gap: '8px' }}>
-                    <button type="button" onClick={() => handleVerify(ev._id)} className="btn-success">
-                      ✅ Approve & Verify
-                    </button>
-                    <button type="button" onClick={() => handleMarkFake(ev._id)} className="btn-danger">
-                      ❌ Mark Fake News
-                    </button>
-                    <button type="button" onClick={() => handleDelete(ev._id)} className="btn-secondary" style={{ color: '#EF4444' }}>
-                      🗑️ Delete
-                    </button>
+                  <p style={{ fontSize: '0.885rem', color: '#4B5563', lineHeight: 1.5, margin: 0 }}>{ev.description}</p>
+
+                  {/* Explainable AI Verification Factors Strip */}
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                      gap: '8px',
+                      backgroundColor: '#F8FAFC',
+                      padding: '10px 14px',
+                      borderRadius: '8px',
+                      border: '1px solid #E2E8F0',
+                      fontSize: '0.75rem',
+                    }}
+                  >
+                    <div>
+                      <span style={{ color: '#64748B' }}>Source Reliability:</span>
+                      <strong style={{ display: 'block', color: '#1F2937' }}>{factors.sourceReliability}%</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#64748B' }}>Location Consistency:</span>
+                      <strong style={{ display: 'block', color: '#1F2937' }}>{factors.locationConsistency}%</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#64748B' }}>Weather Consistency:</span>
+                      <strong style={{ display: 'block', color: '#1F2937' }}>{factors.weatherConsistency}%</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#64748B' }}>Content NLP:</span>
+                      <strong style={{ display: 'block', color: '#1F2937' }}>{factors.contentAnalysis}%</strong>
+                    </div>
+                    <div>
+                      <span style={{ color: '#64748B' }}>Corroboration:</span>
+                      <strong style={{ display: 'block', color: '#1F2937' }}>{factors.duplicateSimilarity}%</strong>
+                    </div>
+                  </div>
+
+                  {/* Bottom Action Strip */}
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      flexWrap: 'wrap',
+                      gap: '12px',
+                      paddingTop: '12px',
+                      borderTop: '1px solid #F1F5F9',
+                    }}
+                  >
+                    {/* Category Reassign Dropdown */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#64748B' }}>Reassign Category:</span>
+                      <select
+                        className="form-select"
+                        style={{ padding: '4px 8px', fontSize: '0.8rem', width: 'auto' }}
+                        value={ev.eventType}
+                        onChange={(e) => handleCategoryReassign(ev._id, e.target.value)}
+                      >
+                        {EVENT_TYPES_CONFIG.map((cfg) => (
+                          <option key={cfg.key} value={cfg.key}>
+                            {cfg.icon} {cfg.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      <Link
+                        to={`/events/${ev._id}`}
+                        className="btn-secondary"
+                        style={{ padding: '5px 10px', fontSize: '0.8rem', textDecoration: 'none' }}
+                      >
+                        📄 Dossier
+                      </Link>
+                      <button type="button" onClick={() => handleVerify(ev._id)} className="btn-success">
+                        ✅ Approve & Verify
+                      </button>
+                      <button type="button" onClick={() => handleMarkFake(ev._id)} className="btn-danger">
+                        ❌ Mark Misleading
+                      </button>
+                      <button type="button" onClick={() => handleDelete(ev._id)} className="btn-secondary" style={{ color: '#EF4444' }}>
+                        🗑️ Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       )}
@@ -348,7 +418,7 @@ const AdminPanel = () => {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
               <thead>
                 <tr style={{ backgroundColor: '#F8FAFC', borderBottom: '1px solid #E2E8F0', textAlign: 'left' }}>
-                  <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600 }}>Title & City</th>
+                  <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600 }}>Title & Location</th>
                   <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600 }}>Hazard</th>
                   <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600 }}>Source</th>
                   <th style={{ padding: '12px 16px', color: '#64748B', fontWeight: 600 }}>Status</th>
@@ -360,7 +430,9 @@ const AdminPanel = () => {
                 {allEvents.map((ev) => (
                   <tr key={ev._id} style={{ borderBottom: '1px solid #F1F5F9' }}>
                     <td style={{ padding: '12px 16px' }}>
-                      <div style={{ fontWeight: 600, color: '#1F2937' }}>{ev.title}</div>
+                      <Link to={`/events/${ev._id}`} style={{ fontWeight: 600, color: '#1F2937', textDecoration: 'none' }}>
+                        {ev.title}
+                      </Link>
                       <div style={{ fontSize: '0.78rem', color: '#64748B' }}>
                         📍 {ev.city}, {ev.state} • {format(new Date(ev.timestamp), 'dd MMM, hh:mm a')}
                       </div>
@@ -368,7 +440,7 @@ const AdminPanel = () => {
                     <td style={{ padding: '12px 16px' }}>
                       <EventTypeBadge type={ev.eventType} size="small" />
                     </td>
-                    <td style={{ padding: '12px 16px', textTransform: 'uppercase', fontSize: '0.78rem', fontWeight: 600, color: '#475569' }}>
+                    <td style={{ padding: '12px 16px', textTransform: 'uppercase', fontSize: '0.75rem', fontWeight: 600, color: '#475569' }}>
                       {ev.source}
                     </td>
                     <td style={{ padding: '12px 16px' }}>
@@ -379,12 +451,15 @@ const AdminPanel = () => {
                     </td>
                     <td style={{ padding: '12px 16px' }}>
                       <div style={{ display: 'flex', gap: '6px' }}>
+                        <Link to={`/events/${ev._id}`} className="btn-secondary" style={{ padding: '4px 6px', fontSize: '0.72rem', textDecoration: 'none' }}>
+                          📄
+                        </Link>
                         {ev.verificationStatus !== 'verified' && (
                           <button onClick={() => handleVerify(ev._id)} className="btn-success" style={{ padding: '4px 8px', fontSize: '0.75rem' }}>
                             ✓
                           </button>
                         )}
-                        {ev.verificationStatus !== 'fake' && (
+                        {ev.verificationStatus !== 'fake' && ev.verificationStatus !== 'misleading' && (
                           <button onClick={() => handleMarkFake(ev._id)} className="btn-danger" style={{ padding: '4px 8px', fontSize: '0.75rem' }}>
                             ✕
                           </button>
@@ -485,11 +560,21 @@ const AdminPanel = () => {
             <div key={src.id} className="ws-card" style={{ padding: '20px', backgroundColor: '#FFFFFF' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span className="pulse-green" />
+                  <span className={src.isSimulated ? 'pulse-dot' : 'pulse-green'} />
                   <h4 style={{ fontSize: '1rem', fontWeight: 700, color: '#1B2A4A' }}>{src.name}</h4>
                 </div>
-                <span style={{ fontSize: '0.72rem', fontWeight: 700, padding: '2px 8px', borderRadius: '4px', backgroundColor: '#ECFDF5', color: '#059669' }}>
-                  ONLINE
+                <span
+                  style={{
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '2px 8px',
+                    borderRadius: '4px',
+                    backgroundColor: src.isSimulated ? '#FFFBEB' : '#ECFDF5',
+                    color: src.isSimulated ? '#B45309' : '#059669',
+                    border: `1px solid ${src.isSimulated ? '#FDE68A' : '#A7F3D0'}`,
+                  }}
+                >
+                  {src.isSimulated ? 'DEMO STREAM' : 'ONLINE'}
                 </span>
               </div>
 

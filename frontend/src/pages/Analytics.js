@@ -70,10 +70,10 @@ const Analytics = () => {
       >
         <div>
           <h2 style={{ fontSize: '1.45rem', fontWeight: 800, color: '#1B2A4A' }}>
-            National Big Data Weather Analytics & Trends
+            National Big Data Weather Analytics & Intelligence Trends
           </h2>
           <p style={{ fontSize: '0.85rem', color: '#64748B', marginTop: '2px' }}>
-            Multi-dimensional meteorological intelligence, AI verification ratios, and historical hazard patterns
+            Multi-dimensional meteorological intelligence, AI verification ratios, deduplication stats, and hazard patterns
           </p>
         </div>
 
@@ -119,10 +119,10 @@ const Analytics = () => {
           <div className="ws-card" style={{ padding: '22px', backgroundColor: '#FFFFFF' }}>
             <div style={{ marginBottom: '16px' }}>
               <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1B2A4A' }}>
-                1. Daily Incident Velocity (Last {daysRange} Days)
+                1. Daily Incident Velocity & Duplicates (Last {daysRange} Days)
               </h3>
               <span style={{ fontSize: '0.78rem', color: '#64748B' }}>
-                Total incoming reports vs AI verified incidents
+                Total incoming reports vs AI verified incidents vs duplicate clusters
               </span>
             </div>
 
@@ -142,8 +142,9 @@ const Analytics = () => {
                     }}
                   />
                   <Legend wrapperStyle={{ fontSize: '0.78rem', paddingTop: '8px' }} />
-                  <Line type="monotone" dataKey="total" name="Total Reports" stroke="#2563EB" strokeWidth={3} dot={{ r: 3 }} />
+                  <Line type="monotone" dataKey="total" name="Total Ingested" stroke="#2563EB" strokeWidth={3} dot={{ r: 3 }} />
                   <Line type="monotone" dataKey="verified" name="Verified Events" stroke="#10B981" strokeWidth={2.5} strokeDasharray="4 4" dot={{ r: 2 }} />
+                  <Line type="monotone" dataKey="duplicates" name="Duplicates Clustered" stroke="#F59E0B" strokeWidth={2} dot={{ r: 2 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -295,33 +296,35 @@ const Analytics = () => {
             </div>
           </div>
 
-          {/* Chart 6: Horizontal bar: Source breakdown */}
+          {/* Chart 6: Horizontal bar: Multi-source 6 streams breakdown */}
           <div className="ws-card" style={{ padding: '22px', backgroundColor: '#FFFFFF' }}>
             <div style={{ marginBottom: '16px' }}>
               <h3 style={{ fontSize: '1.05rem', fontWeight: 700, color: '#1B2A4A' }}>
-                6. Multi-Source Ingestion Breakdown
+                6. Multi-Source Ingestion Breakdown (6 Streams)
               </h3>
               <span style={{ fontSize: '0.78rem', color: '#64748B' }}>
-                Volume and percentage share by ingestion pipeline
+                Volume and percentage share across all meteorological data pipelines
               </span>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', paddingTop: '10px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingTop: '6px' }}>
               {sources.map((src) => (
                 <div key={src.key}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '6px' }}>
-                    <span style={{ fontWeight: 600, color: '#1F2937' }}>{src.name}</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.825rem', marginBottom: '4px' }}>
+                    <span style={{ fontWeight: 600, color: '#1F2937' }}>
+                      {src.name} {src.isSimulated ? '(Demo)' : ''}
+                    </span>
                     <span style={{ fontWeight: 700, color: src.color }}>
                       {src.count} records ({src.percentage}%)
                     </span>
                   </div>
-                  <div style={{ width: '100%', height: '10px', backgroundColor: '#F1F5F9', borderRadius: '5px', overflow: 'hidden' }}>
+                  <div style={{ width: '100%', height: '8px', backgroundColor: '#F1F5F9', borderRadius: '4px', overflow: 'hidden' }}>
                     <div
                       style={{
                         width: `${src.percentage}%`,
                         height: '100%',
                         backgroundColor: src.color,
-                        borderRadius: '5px',
+                        borderRadius: '4px',
                         transition: 'width 0.6s ease',
                       }}
                     />

@@ -13,9 +13,14 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import Dashboard from './pages/Dashboard';
 import EventsFeed from './pages/EventsFeed';
+import EventDetail from './pages/EventDetail';
+import DataSources from './pages/DataSources';
+import AIIntelligence from './pages/AIIntelligence';
 import Analytics from './pages/Analytics';
 import AdminPanel from './pages/AdminPanel';
 import CitizenReport from './pages/CitizenReport';
+import MyReports from './pages/MyReports';
+import SafetyGuidelines from './pages/SafetyGuidelines';
 import MapView from './pages/MapView';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
@@ -96,7 +101,7 @@ const AppShell = () => {
             <Route path="/" element={<Home />} />
             <Route path="/login" element={<Login />} />
 
-            {/* Protected Routes */}
+            {/* Protected Routes for All Authenticated Users */}
             <Route
               path="/dashboard"
               element={
@@ -114,10 +119,26 @@ const AppShell = () => {
               }
             />
             <Route
-              path="/analytics"
+              path="/events/:id"
               element={
                 <ProtectedRoute>
-                  <Analytics />
+                  <EventDetail />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/my-reports"
+              element={
+                <ProtectedRoute>
+                  <MyReports />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/safety-guidelines"
+              element={
+                <ProtectedRoute>
+                  <SafetyGuidelines />
                 </ProtectedRoute>
               }
             />
@@ -134,12 +155,36 @@ const AppShell = () => {
               element={<CitizenReport />}
             />
 
-            {/* Admin Only Route */}
+            {/* Admin / Officer Only Routes */}
             <Route
               path="/admin"
               element={
                 <AdminRoute>
                   <AdminPanel />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/data-sources"
+              element={
+                <AdminRoute>
+                  <DataSources />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/ai-intelligence"
+              element={
+                <AdminRoute>
+                  <AIIntelligence />
+                </AdminRoute>
+              }
+            />
+            <Route
+              path="/analytics"
+              element={
+                <AdminRoute>
+                  <Analytics />
                 </AdminRoute>
               }
             />

@@ -2,6 +2,11 @@ const mongoose = require('mongoose');
 
 const citizenReportSchema = new mongoose.Schema(
   {
+    reportCode: {
+      type: String,
+      default: () => `WS-${Math.floor(10000 + Math.random() * 90000)}`,
+      unique: true,
+    },
     reporterName: {
       type: String,
       required: [true, 'Reporter name is required'],
@@ -61,13 +66,26 @@ const citizenReportSchema = new mongoose.Schema(
       type: String,
       default: '',
     },
+    videoUrl: {
+      type: String,
+      default: '',
+    },
+    weatherEventId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WeatherEvent',
+      default: null,
+    },
+    aiConfidenceScore: {
+      type: Number,
+      default: 0.75,
+    },
     eventTimestamp: {
       type: Date,
       default: Date.now,
     },
     verificationStatus: {
       type: String,
-      enum: ['pending', 'verified', 'fake'],
+      enum: ['pending', 'verified', 'fake', 'misleading', 'needs_review'],
       default: 'pending',
     },
     submittedAt: {

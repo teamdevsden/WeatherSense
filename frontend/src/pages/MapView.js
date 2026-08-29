@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import IndiaMap from '../components/IndiaMap';
-import { INDIAN_STATES, EVENT_TYPES_CONFIG } from '../utils/indianCities';
+import { INDIAN_STATES, EVENT_TYPES_CONFIG, SOURCE_CONFIGS } from '../utils/indianCities';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import toast from 'react-hot-toast';
@@ -12,6 +12,7 @@ const MapView = () => {
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [filters, setFilters] = useState({
     state: 'All States',
+    source: 'all',
     selectedTypes: ['rainfall', 'flooding', 'heatwave', 'thunderstorm', 'fog', 'dust_storm', 'strong_winds'],
     status: 'all',
   });
@@ -22,6 +23,7 @@ const MapView = () => {
       const params = new URLSearchParams();
       params.append('all', 'true');
       if (filters.state !== 'All States') params.append('state', filters.state);
+      if (filters.source && filters.source !== 'all') params.append('source', filters.source);
       if (filters.selectedTypes.length > 0 && filters.selectedTypes.length < EVENT_TYPES_CONFIG.length) {
         params.append('type', filters.selectedTypes.join(','));
       }
@@ -166,6 +168,26 @@ const MapView = () => {
                 ))}
               </select>
             </div>
+
+            {/* Ingestion Source Filter (Admin Only) */}
+            {isAdmin && (
+              <div>
+                <label className="form-label" style={{ fontSize: '0.8rem' }}>Ingestion Stream</label>
+                <select
+                  className="form-select"
+                  style={{ fontSize: '0.85rem', padding: '8px 10px' }}
+                  value={filters.source}
+                  onChange={(e) => setFilters({ ...filters, source: e.target.value })}
+                >
+                  <option value="all">All 6 Ingestion Streams</option>
+                  {SOURCE_CONFIGS.map((s) => (
+                    <option key={s.key} value={s.key}>
+                      {s.icon} {s.shortName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             {/* Verification Status (Admin Only) */}
             {isAdmin && (

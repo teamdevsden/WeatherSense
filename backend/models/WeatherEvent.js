@@ -4,9 +4,17 @@ const weatherEventSchema = new mongoose.Schema(
   {
     source: {
       type: String,
-      enum: ['twitter', 'imd_api', 'openweather', 'citizen'],
+      enum: ['twitter', 'imd_api', 'openweather', 'citizen', 'news_web', 'public_dataset'],
       required: true,
       default: 'imd_api',
+    },
+    sourceName: {
+      type: String,
+      default: 'IMD AWS & Radar Doppler',
+    },
+    sourceUrl: {
+      type: String,
+      default: '',
     },
     title: {
       type: String,
@@ -65,9 +73,14 @@ const weatherEventSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    mediaType: {
+      type: String,
+      enum: ['image', 'video', 'radar', 'text_only'],
+      default: 'image',
+    },
     verificationStatus: {
       type: String,
-      enum: ['pending', 'verified', 'fake'],
+      enum: ['pending', 'verified', 'fake', 'misleading', 'needs_review'],
       default: 'pending',
     },
     verifiedBy: {
@@ -81,9 +94,62 @@ const weatherEventSchema = new mongoose.Schema(
       max: 1,
       default: 0.85,
     },
+    verificationFactors: {
+      sourceReliability: { type: Number, default: 85 },
+      locationConsistency: { type: Number, default: 90 },
+      weatherConsistency: { type: Number, default: 85 },
+      contentAnalysis: { type: Number, default: 88 },
+      duplicateSimilarity: { type: Number, default: 80 },
+    },
     isFake: {
       type: Boolean,
       default: false,
+    },
+    isDuplicate: {
+      type: Boolean,
+      default: false,
+    },
+    duplicateOf: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'WeatherEvent',
+      default: null,
+    },
+    duplicateGroupId: {
+      type: String,
+      default: null,
+    },
+    similarityScore: {
+      type: Number,
+      default: 0,
+    },
+    reportCount: {
+      type: Number,
+      default: 1,
+    },
+    associatedReports: [
+      {
+        reportId: String,
+        source: String,
+        text: String,
+        timestamp: { type: Date, default: Date.now },
+        reporterName: String,
+      },
+    ],
+    processingTimeline: [
+      {
+        step: String,
+        timestamp: { type: Date, default: Date.now },
+        details: String,
+      },
+    ],
+    processingStatus: {
+      type: String,
+      enum: ['raw', 'processing', 'processed', 'flagged'],
+      default: 'processed',
+    },
+    ingestionTimestamp: {
+      type: Date,
+      default: Date.now,
     },
   },
   {
@@ -91,8 +157,9 @@ const weatherEventSchema = new mongoose.Schema(
   }
 );
 
-// Add index for geo queries and search
+// Indexes for geo queries, search and fast filtering
 weatherEventSchema.index({ 'location.coordinates': '2dsphere' });
 weatherEventSchema.index({ eventType: 1, state: 1, verificationStatus: 1, timestamp: -1 });
+weatherEventSchema.index({ source: 1, isDuplicate: 1, duplicateGroupId: 1 });
 
 module.exports = mongoose.model('WeatherEvent', weatherEventSchema);
