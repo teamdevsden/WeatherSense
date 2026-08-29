@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { INDIAN_CITIES, EVENT_TYPES_CONFIG } from '../utils/indianCities';
 import { useAuth } from '../context/AuthContext';
@@ -6,12 +6,12 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 
 const CitizenReport = () => {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, loading, quickLogin } = useAuth();
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
-    name: user?.name || '',
-    phone: user?.phone || '',
+    name: user?.role === 'admin' ? 'Rahul Sharma' : (user?.name || 'Rahul Sharma'),
+    phone: user?.role === 'admin' ? '9876543210' : (user?.phone || '9876543210'),
     city: 'Mumbai',
     state: 'Maharashtra',
     eventType: 'rainfall',
@@ -21,6 +21,23 @@ const CitizenReport = () => {
     photoUrl: '',
     videoUrl: '',
   });
+
+  // Auto-switch to citizen session if accessed directly or from admin session
+  useEffect(() => {
+    if (!loading && (user?.role === 'admin' || !isAuthenticated)) {
+      quickLogin('citizen', false);
+    }
+  }, [loading, user, isAuthenticated, quickLogin]);
+
+  useEffect(() => {
+    if (user && user.role !== 'admin') {
+      setFormData((prev) => ({
+        ...prev,
+        name: user.name || prev.name,
+        phone: user.phone || prev.phone,
+      }));
+    }
+  }, [user]);
 
   const [locationStatus, setLocationStatus] = useState('');
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -104,12 +121,6 @@ const CitizenReport = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (!isAuthenticated) {
-      toast.error('Please sign in to submit verified citizen reports');
-      navigate('/login');
-      return;
-    }
-
     if (!validate()) {
       toast.error('Please resolve the errors highlighted in the form.');
       return;
@@ -117,6 +128,9 @@ const CitizenReport = () => {
 
     setIsSubmitting(true);
     try {
+      if (!isAuthenticated) {
+        await quickLogin('citizen', false);
+      }
       const res = await api.post('/reports', {
         reporterName: formData.name,
         reporterPhone: formData.phone,

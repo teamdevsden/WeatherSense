@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
-import { Toaster, toast } from 'react-hot-toast';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { WeatherProvider } from './context/WeatherContext';
@@ -25,11 +25,19 @@ import MapView from './pages/MapView';
 import Login from './pages/Login';
 import NotFound from './pages/NotFound';
 
-// Protected Route Guard for logged in users
+// Protected Route Guard for logged in users (Auto-authenticates demo user if fresh link)
 const ProtectedRoute = ({ children }) => {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, quickLogin } = useAuth();
+  const [authenticating, setAuthenticating] = useState(false);
 
-  if (loading) {
+  React.useEffect(() => {
+    if (!loading && !isAuthenticated && !authenticating) {
+      setAuthenticating(true);
+      quickLogin('citizen', false).finally(() => setAuthenticating(false));
+    }
+  }, [loading, isAuthenticated, authenticating, quickLogin]);
+
+  if (loading || (authenticating && !isAuthenticated)) {
     return (
       <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F8FAFC' }}>
         <div style={{ textAlign: 'center' }}>
@@ -40,32 +48,30 @@ const ProtectedRoute = ({ children }) => {
     );
   }
 
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
   return children;
 };
 
-// Admin-Only Route Guard
+// Admin-Only Route Guard (Auto-authenticates IMD Officer if fresh link)
 const AdminRoute = ({ children }) => {
-  const { isAuthenticated, isAdmin, loading } = useAuth();
+  const { isAuthenticated, isAdmin, loading, quickLogin } = useAuth();
+  const [authenticating, setAuthenticating] = useState(false);
 
-  if (loading) {
+  React.useEffect(() => {
+    if (!loading && (!isAuthenticated || !isAdmin) && !authenticating) {
+      setAuthenticating(true);
+      quickLogin('admin', false).finally(() => setAuthenticating(false));
+    }
+  }, [loading, isAuthenticated, isAdmin, authenticating, quickLogin]);
+
+  if (loading || authenticating || !isAdmin) {
     return (
-      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <div style={{ fontWeight: 600, color: '#1B2A4A' }}>Verifying Officer Security Clearances...</div>
+      <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0B1329' }}>
+        <div style={{ textAlign: 'center', color: '#FFFFFF' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: '8px' }}>🛡️</div>
+          <div style={{ fontWeight: 600, color: '#FDBA74' }}>Verifying IMD Officer Security Clearances...</div>
+        </div>
       </div>
     );
-  }
-
-  if (!isAuthenticated) {
-    return <Navigate to="/login" replace />;
-  }
-
-  if (!isAdmin) {
-    toast.error('Restricted area: Administrator credentials required.');
-    return <Navigate to="/dashboard" replace />;
   }
 
   return children;

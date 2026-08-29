@@ -36,7 +36,7 @@ export const AuthProvider = ({ children }) => {
     initAuth();
   }, []);
 
-  const login = async (email, password) => {
+  const login = async (email, password, showToast = true) => {
     try {
       const res = await api.post('/auth/login', { email, password });
       if (res.data && res.data.success) {
@@ -45,22 +45,26 @@ export const AuthProvider = ({ children }) => {
         setUser(receivedUser);
         localStorage.setItem('weathersense_token', receivedToken);
         localStorage.setItem('weathersense_user', JSON.stringify(receivedUser));
-        toast.success(`Welcome back, ${receivedUser.name}!`);
+        if (showToast) {
+          toast.success(`Welcome back, ${receivedUser.name}!`);
+        }
         return { success: true, user: receivedUser };
       }
       return { success: false, message: 'Invalid response from server' };
     } catch (error) {
       const msg = error.response?.data?.message || 'Login failed. Please check credentials.';
-      toast.error(msg);
+      if (showToast) {
+        toast.error(msg);
+      }
       return { success: false, message: msg };
     }
   };
 
-  const quickLogin = async (role = 'admin') => {
+  const quickLogin = async (role = 'admin', showToast = false) => {
     if (role === 'admin') {
-      return await login('admin@imd.gov.in', 'admin123');
+      return await login('admin@imd.gov.in', 'admin123', showToast);
     } else {
-      return await login('citizen@demo.com', 'citizen123');
+      return await login('citizen@demo.com', 'citizen123', showToast);
     }
   };
 
