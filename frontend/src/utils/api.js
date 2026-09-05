@@ -4,9 +4,9 @@ const isLocalhost =
   typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-const API_BASE_URL =
-  process.env.REACT_APP_API_URL ||
-  (isLocalhost ? 'http://localhost:5000/api' : 'https://weathersense-628u.onrender.com/api');
+const API_BASE_URL = isLocalhost
+  ? (process.env.REACT_APP_API_URL || 'http://localhost:5000/api')
+  : 'https://weathersense-628u.onrender.com/api';
 
 const api = axios.create({
   baseURL: API_BASE_URL,

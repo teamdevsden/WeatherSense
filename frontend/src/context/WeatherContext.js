@@ -9,9 +9,9 @@ const isLocalhost =
   typeof window !== 'undefined' &&
   (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-const SOCKET_SERVER_URL =
-  process.env.REACT_APP_SOCKET_URL ||
-  (isLocalhost ? 'http://localhost:5000' : 'https://weathersense-628u.onrender.com');
+const SOCKET_SERVER_URL = isLocalhost
+  ? (process.env.REACT_APP_SOCKET_URL || 'http://localhost:5000')
+  : 'https://weathersense-628u.onrender.com';
 
 export const WeatherProvider = ({ children }) => {
   const [liveFeed, setLiveFeed] = useState([]);
