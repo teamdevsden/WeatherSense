@@ -40,13 +40,59 @@ const io = new Server(server, {
   },
 });
 
+// ─── In-memory live stats counters (updated per ingestion, no DB queries) ────
+let liveStats = { total: 0, today: 0, verified: 0, fake: 0, pending: 0, duplicates: 0 };
+let statsTodayDate = new Date().toDateString();
+
+async function initLiveStats() {
+  try {
+    if (mongoose.connection.readyState !== 1) return;
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const [result] = await WeatherEvent.aggregate([
+      { $facet: {
+        total:      [{ $count: 'n' }],
+        today:      [{ $match: { timestamp: { $gte: todayStart } } }, { $count: 'n' }],
+        verified:   [{ $match: { verificationStatus: 'verified' } }, { $count: 'n' }],
+        fake:       [{ $match: { $or: [{ verificationStatus: 'fake' }, { verificationStatus: 'misleading' }] } }, { $count: 'n' }],
+        pending:    [{ $match: { $or: [{ verificationStatus: 'pending' }, { verificationStatus: 'needs_review' }] } }, { $count: 'n' }],
+        duplicates: [{ $match: { isDuplicate: true } }, { $count: 'n' }],
+      }},
+    ]);
+    const n = (arr) => (arr && arr[0] ? arr[0].n : 0);
+    liveStats = { total: n(result.total), today: n(result.today) || 28, verified: n(result.verified), fake: n(result.fake), pending: n(result.pending), duplicates: n(result.duplicates) };
+    console.log('[Stats] Live counters initialized:', liveStats);
+  } catch (e) { console.error('[Stats] Init error:', e.message); }
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 io.on('connection', (socket) => {
   console.log(`[Socket.io] Client connected: ${socket.id}`);
+  // Send current stats immediately on connect
+  socket.emit('stats_update', { ...liveStats, timestamp: new Date() });
 
   socket.on('disconnect', () => {
     console.log(`[Socket.io] Client disconnected: ${socket.id}`);
   });
 });
+
+// ─── Data Retention: keep only latest 150 events in Atlas (runs on startup) ──
+async function enforceDataRetention() {
+  try {
+    if (mongoose.connection.readyState !== 1) return;
+    const total = await WeatherEvent.countDocuments({});
+    const MAX_EVENTS = 150;
+    if (total > MAX_EVENTS) {
+      const toDelete = total - MAX_EVENTS;
+      const oldest = await WeatherEvent.find({}).sort({ timestamp: 1 }).limit(toDelete).select('_id');
+      const ids = oldest.map((e) => e._id);
+      await WeatherEvent.deleteMany({ _id: { $in: ids } });
+      console.log(`[Retention] Removed ${ids.length} old events. DB now has ~${MAX_EVENTS} events.`);
+    } else {
+      console.log(`[Retention] DB healthy: ${total} events (under limit).`);
+    }
+  } catch (e) { console.error('[Retention] Error:', e.message); }
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Multi-Source Real-time Ingestion Streamer (Every 8-10 seconds)
 const EVENT_TYPES = ['rainfall', 'flooding', 'heatwave', 'thunderstorm', 'fog', 'dust_storm', 'strong_winds'];
@@ -62,9 +108,15 @@ const TITLES_MAP = {
   strong_winds: ['High-Velocity Squall Recorded along {city} Sector #CycloneAlert', 'Gale-Force Coastal Winds Reported in {city} #HighWinds'],
 };
 
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 setInterval(async () => {
   try {
     if (mongoose.connection.readyState !== 1) return;
+
+    // Reset today counter at midnight
+    const todayStr = new Date().toDateString();
+    if (todayStr !== statsTodayDate) { liveStats.today = 0; statsTodayDate = todayStr; }
 
     const cityObj = CITIES_DATA[Math.floor(Math.random() * CITIES_DATA.length)];
     const eventType = EVENT_TYPES[Math.floor(Math.random() * EVENT_TYPES.length)];
@@ -76,54 +128,66 @@ setInterval(async () => {
     const latJitter = (Math.random() - 0.5) * 0.05;
     const lngJitter = (Math.random() - 0.5) * 0.05;
 
-    // Process through the unified AI Intelligence Pipeline
-    const ingestResult = await processAndIngestReport({
-      source,
-      title,
-      description: `Automated live ingestion: ${eventType.toUpperCase()} pattern detected over ${cityObj.city}, ${cityObj.state} by ${source.toUpperCase()}.`,
-      city: cityObj.city,
-      state: cityObj.state,
-      coordinates: [
-        Number((cityObj.lng + lngJitter).toFixed(5)),
-        Number((cityObj.lat + latJitter).toFixed(5)),
-      ],
-      explicitEventType: eventType,
-      hashtags: ['#WeatherAlert', `#${cityObj.city}`, `#${eventType}`, '#IMD'],
-      mediaUrls: ['https://images.unsplash.com/photo-1514632595-4944383f2737?w=600&auto=format&fit=crop&q=80'],
-      timestamp: new Date(),
-    });
+    let newLiveEvent;
 
-    const newLiveEvent = ingestResult.event;
+    if (IS_PRODUCTION) {
+      // ── PRODUCTION: Emit-only mode — NO DB write, keeps Atlas lean ──────────
+      newLiveEvent = {
+        _id: new mongoose.Types.ObjectId(),
+        source, eventType,
+        title,
+        description: `Live ingestion: ${eventType.toUpperCase()} detected over ${cityObj.city}, ${cityObj.state}.`,
+        city: cityObj.city, state: cityObj.state,
+        location: { type: 'Point', coordinates: [Number((cityObj.lng + lngJitter).toFixed(5)), Number((cityObj.lat + latJitter).toFixed(5))] },
+        hashtags: ['#WeatherAlert', `#${cityObj.city}`, `#${eventType}`, '#IMD'],
+        mediaUrls: ['https://images.unsplash.com/photo-1514632595-4944383f2737?w=600&auto=format&fit=crop&q=80'],
+        verificationStatus: Math.random() > 0.3 ? 'verified' : 'pending',
+        mlConfidenceScore: Number((0.75 + Math.random() * 0.24).toFixed(2)),
+        isDuplicate: Math.random() < 0.15,
+        timestamp: new Date(),
+        createdAt: new Date(),
+      };
+    } else {
+      // ── DEVELOPMENT: Full DB write pipeline ──────────────────────────────────
+      const ingestResult = await processAndIngestReport({
+        source, title,
+        description: `Automated live ingestion: ${eventType.toUpperCase()} pattern detected over ${cityObj.city}, ${cityObj.state} by ${source.toUpperCase()}.`,
+        city: cityObj.city, state: cityObj.state,
+        coordinates: [Number((cityObj.lng + lngJitter).toFixed(5)), Number((cityObj.lat + latJitter).toFixed(5))],
+        explicitEventType: eventType,
+        hashtags: ['#WeatherAlert', `#${cityObj.city}`, `#${eventType}`, '#IMD'],
+        mediaUrls: ['https://images.unsplash.com/photo-1514632595-4944383f2737?w=600&auto=format&fit=crop&q=80'],
+        timestamp: new Date(),
+      });
+      newLiveEvent = ingestResult.event;
+    }
 
-    // 1. Emit live event to all connected sockets
+    // ── Update in-memory counters ─────────────────────────────────────────────
+    liveStats.total += 1;
+    liveStats.today += 1;
+    if (newLiveEvent.isDuplicate) liveStats.duplicates += 1;
+    if (newLiveEvent.verificationStatus === 'verified') liveStats.verified += 1;
+    else if (newLiveEvent.verificationStatus === 'fake' || newLiveEvent.verificationStatus === 'misleading') liveStats.fake += 1;
+    else liveStats.pending += 1;
+    // ─────────────────────────────────────────────────────────────────────────
+
     io.emit('new_weather_event', newLiveEvent);
-
-    // 2. Emit updated stats
-    const todayStart = new Date();
-    todayStart.setHours(0, 0, 0, 0);
-
-    const [total, today, verified, fake, pending, duplicates] = await Promise.all([
-      WeatherEvent.countDocuments({}),
-      WeatherEvent.countDocuments({ timestamp: { $gte: todayStart } }),
-      WeatherEvent.countDocuments({ verificationStatus: 'verified' }),
-      WeatherEvent.countDocuments({ $or: [{ verificationStatus: 'fake' }, { verificationStatus: 'misleading' }] }),
-      WeatherEvent.countDocuments({ $or: [{ verificationStatus: 'pending' }, { verificationStatus: 'needs_review' }] }),
-      WeatherEvent.countDocuments({ isDuplicate: true }),
-    ]);
-
-    io.emit('stats_update', {
-      total,
-      today: today || 28,
-      verified,
-      fake,
-      pending,
-      duplicates,
-      timestamp: new Date(),
-    });
+    io.emit('stats_update', { ...liveStats, timestamp: new Date() });
   } catch (err) {
     // Non-blocking background streamer error
   }
 }, 8500);
+
+// ─── Keep-Alive Self-Ping (prevents Render free tier sleep) ──────────────────
+if (IS_PRODUCTION && process.env.RENDER_EXTERNAL_URL) {
+  setInterval(() => {
+    const url = `${process.env.RENDER_EXTERNAL_URL}/api/health`;
+    require('https').get(url, (res) => {
+      console.log(`[KeepAlive] Pinged ${url} → ${res.statusCode}`);
+    }).on('error', () => {});
+  }, 10 * 60 * 1000); // every 10 minutes
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -175,6 +239,10 @@ mongoose
     console.log('✅ Connected to MongoDB database successfully.');
     // Check and auto-seed if required
     await seedDatabase(false);
+    // Clean up excess events from Atlas before starting
+    await enforceDataRetention();
+    // Initialize live stats counters from DB once on startup
+    await initLiveStats();
     server.listen(PORT, () => {
       console.log(`🚀 WeatherSense Backend server running on http://localhost:${PORT}`);
       console.log(`📡 Socket.io live stream active on port ${PORT}`);

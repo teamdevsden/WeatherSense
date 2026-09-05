@@ -2,78 +2,79 @@ const express = require('express');
 const router = express.Router();
 const WeatherEvent = require('../models/WeatherEvent');
 
+// ─── Simple in-memory cache (5 minute TTL) ───────────────────────────────────
+const cache = {};
+function getCache(key) {
+  const entry = cache[key];
+  if (!entry) return null;
+  if (Date.now() - entry.ts > 5 * 60 * 1000) { delete cache[key]; return null; }
+  return entry.data;
+}
+function setCache(key, data) { cache[key] = { data, ts: Date.now() }; }
+// ─────────────────────────────────────────────────────────────────────────────
+
 // @route   GET /api/analytics/summary
-// @desc    Get top-level KPI counters, AI statistics, and today stats
+// @desc    Get top-level KPI counters via single $facet aggregation (fast)
 // @access  Public / Protected
 router.get('/summary', async (req, res) => {
   try {
+    const cached = getCache('summary');
+    if (cached) return res.json({ success: true, ...cached, _cached: true });
+
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
-    const [
+    // Single aggregation call instead of 13 separate countDocuments
+    const [result] = await WeatherEvent.aggregate([
+      {
+        $facet: {
+          total:         [{ $count: 'n' }],
+          today:         [{ $match: { timestamp: { $gte: todayStart } } }, { $count: 'n' }],
+          verified:      [{ $match: { verificationStatus: 'verified' } }, { $count: 'n' }],
+          fake:          [{ $match: { $or: [{ verificationStatus: 'fake' }, { verificationStatus: 'misleading' }, { isFake: true }] } }, { $count: 'n' }],
+          pending:       [{ $match: { $or: [{ verificationStatus: 'pending' }, { verificationStatus: 'needs_review' }] } }, { $count: 'n' }],
+          duplicate:     [{ $match: { isDuplicate: true } }, { $count: 'n' }],
+          byType:        [{ $group: { _id: '$eventType', count: { $sum: 1 } } }],
+        },
+      },
+    ]);
+
+    const n = (arr) => (arr && arr[0] ? arr[0].n : 0);
+    const totalEvents   = n(result.total);
+    const todayEvents   = n(result.today) || Math.floor(totalEvents * 0.25) || 24;
+    const verifiedCount = n(result.verified);
+    const fakeCount     = n(result.fake);
+    const pendingCount  = n(result.pending);
+    const duplicateCount= n(result.duplicate);
+    const activeWeatherEvents = Math.max(1, totalEvents - duplicateCount);
+
+    const typeBreakdown = { rainfall: 0, flooding: 0, heatwave: 0, thunderstorm: 0, fog: 0, dust_storm: 0, strong_winds: 0 };
+    (result.byType || []).forEach(({ _id, count }) => { if (_id in typeBreakdown) typeBreakdown[_id] = count; });
+
+    const data = {
       totalEvents,
+      totalReports: totalEvents + duplicateCount * 3,
       todayEvents,
       verifiedCount,
       fakeCount,
       pendingCount,
       duplicateCount,
-      rainfallCount,
-      floodingCount,
-      heatwaveCount,
-      thunderstormCount,
-      fogCount,
-      dustStormCount,
-      strongWindsCount,
-    ] = await Promise.all([
-      WeatherEvent.countDocuments({}),
-      WeatherEvent.countDocuments({ timestamp: { $gte: todayStart } }),
-      WeatherEvent.countDocuments({ verificationStatus: 'verified' }),
-      WeatherEvent.countDocuments({ $or: [{ verificationStatus: 'fake' }, { verificationStatus: 'misleading' }, { isFake: true }] }),
-      WeatherEvent.countDocuments({ $or: [{ verificationStatus: 'pending' }, { verificationStatus: 'needs_review' }] }),
-      WeatherEvent.countDocuments({ isDuplicate: true }),
-      WeatherEvent.countDocuments({ eventType: 'rainfall' }),
-      WeatherEvent.countDocuments({ eventType: 'flooding' }),
-      WeatherEvent.countDocuments({ eventType: 'heatwave' }),
-      WeatherEvent.countDocuments({ eventType: 'thunderstorm' }),
-      WeatherEvent.countDocuments({ eventType: 'fog' }),
-      WeatherEvent.countDocuments({ eventType: 'dust_storm' }),
-      WeatherEvent.countDocuments({ eventType: 'strong_winds' }),
-    ]);
-
-    const activeWeatherEvents = Math.max(1, totalEvents - duplicateCount);
-
-    res.json({
-      success: true,
-      data: {
-        totalEvents,
-        totalReports: totalEvents + (duplicateCount * 3), // Total ingested report occurrences
-        todayEvents: todayEvents || Math.floor(totalEvents * 0.25) || 24,
-        verifiedCount,
-        fakeCount,
-        pendingCount,
-        duplicateCount,
-        activeWeatherEvents,
-        sourcesConnected: 6,
-        statesMonitored: 36,
-        typeBreakdown: {
-          rainfall: rainfallCount,
-          flooding: floodingCount,
-          heatwave: heatwaveCount,
-          thunderstorm: thunderstormCount,
-          fog: fogCount,
-          dust_storm: dustStormCount,
-          strong_winds: strongWindsCount,
-        },
-        aiStats: {
-          totalProcessed: totalEvents + duplicateCount,
-          aiVerified: verifiedCount,
-          flaggedMisinformation: fakeCount,
-          duplicatesMerged: duplicateCount,
-          eventsClassified: totalEvents,
-          averageConfidence: 89.4,
-        },
+      activeWeatherEvents,
+      sourcesConnected: 6,
+      statesMonitored: 36,
+      typeBreakdown,
+      aiStats: {
+        totalProcessed: totalEvents + duplicateCount,
+        aiVerified: verifiedCount,
+        flaggedMisinformation: fakeCount,
+        duplicatesMerged: duplicateCount,
+        eventsClassified: totalEvents,
+        averageConfidence: 89.4,
       },
-    });
+    };
+
+    setCache('summary', { data });
+    res.json({ success: true, data });
   } catch (error) {
     console.error('Analytics summary error:', error);
     res.status(500).json({ success: false, message: 'Failed to retrieve analytics summary', error: error.message });
@@ -81,117 +82,117 @@ router.get('/summary', async (req, res) => {
 });
 
 // @route   GET /api/analytics/trends
-// @desc    Get detailed chart series: 30-day line, Top 10 states bar, Hourly area, Week vs Week, Scatter
+// @desc    Get detailed chart series using aggregation pipelines (fast — no find({}))
 // @access  Public / Protected
 router.get('/trends', async (req, res) => {
   try {
     const { days = 30 } = req.query;
-    const daysNum = parseInt(days, 10) || 30;
+    const daysNum = Math.min(parseInt(days, 10) || 30, 90);
+    const cacheKey = `trends_${daysNum}`;
 
-    const allEvents = await WeatherEvent.find({}).sort({ timestamp: 1 });
+    const cached = getCache(cacheKey);
+    if (cached) return res.json({ success: true, ...cached, _cached: true });
 
-    // 1. Daily timeline for the last `daysNum` days
-    const dailyMap = {};
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysNum + 1);
+    startDate.setHours(0, 0, 0, 0);
+
+    // ── 1. Daily trends via aggregation (no full collection scan) ─────────────
+    const dailyAgg = await WeatherEvent.aggregate([
+      { $match: { timestamp: { $gte: startDate } } },
+      {
+        $group: {
+          _id: { $dateToString: { format: '%Y-%m-%d', date: '$timestamp' } },
+          total:        { $sum: 1 },
+          rainfall:     { $sum: { $cond: [{ $eq: ['$eventType', 'rainfall'] }, 1, 0] } },
+          flooding:     { $sum: { $cond: [{ $eq: ['$eventType', 'flooding'] }, 1, 0] } },
+          heatwave:     { $sum: { $cond: [{ $eq: ['$eventType', 'heatwave'] }, 1, 0] } },
+          thunderstorm: { $sum: { $cond: [{ $eq: ['$eventType', 'thunderstorm'] }, 1, 0] } },
+          fog:          { $sum: { $cond: [{ $eq: ['$eventType', 'fog'] }, 1, 0] } },
+          dust_storm:   { $sum: { $cond: [{ $eq: ['$eventType', 'dust_storm'] }, 1, 0] } },
+          strong_winds: { $sum: { $cond: [{ $eq: ['$eventType', 'strong_winds'] }, 1, 0] } },
+          other:        { $sum: { $cond: [{ $not: [{ $in: ['$eventType', ['rainfall','flooding','heatwave','thunderstorm','fog','dust_storm','strong_winds']] }] }, 1, 0] } },
+          verified:     { $sum: { $cond: [{ $eq: ['$verificationStatus', 'verified'] }, 1, 0] } },
+          duplicates:   { $sum: { $cond: ['$isDuplicate', 1, 0] } },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Build complete date map
+    const dailyDbMap = {};
+    dailyAgg.forEach((row) => { dailyDbMap[row._id] = row; });
+
     const now = new Date();
+    const dailyTrends = [];
     for (let i = daysNum - 1; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
       const dateKey = d.toISOString().split('T')[0];
-      dailyMap[dateKey] = {
-        date: dateKey,
-        label: `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`,
-        total: 0,
-        rainfall: 0,
-        flooding: 0,
-        heatwave: 0,
-        thunderstorm: 0,
-        fog: 0,
-        dust_storm: 0,
-        strong_winds: 0,
-        other: 0,
-        verified: 0,
-        duplicates: 0,
-      };
-    }
-
-    allEvents.forEach((ev) => {
-      const dateKey = new Date(ev.timestamp).toISOString().split('T')[0];
-      if (dailyMap[dateKey]) {
-        dailyMap[dateKey].total += 1;
-        if (ev.verificationStatus === 'verified') dailyMap[dateKey].verified += 1;
-        if (ev.isDuplicate) dailyMap[dateKey].duplicates += 1;
-        if (['rainfall', 'flooding', 'heatwave', 'thunderstorm', 'fog', 'dust_storm', 'strong_winds'].includes(ev.eventType)) {
-          dailyMap[dateKey][ev.eventType] += 1;
-        } else {
-          dailyMap[dateKey].other += 1;
-        }
-      }
-    });
-
-    // Populate smooth baseline values if date span exceeds seeded dates
-    const dailyTrends = Object.values(dailyMap).map((item, idx) => {
-      if (item.total === 0) {
+      const row = dailyDbMap[dateKey];
+      if (row) {
+        dailyTrends.push({
+          date: dateKey,
+          label: `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`,
+          total: row.total, rainfall: row.rainfall, flooding: row.flooding,
+          heatwave: row.heatwave, thunderstorm: row.thunderstorm, fog: row.fog,
+          dust_storm: row.dust_storm, strong_winds: row.strong_winds, other: row.other,
+          verified: row.verified, duplicates: row.duplicates,
+        });
+      } else {
+        const idx = daysNum - 1 - i;
         const base = Math.floor(Math.sin(idx / 3) * 6 + 10);
-        return {
-          ...item,
-          total: base,
-          rainfall: Math.floor(base * 0.35),
-          flooding: Math.floor(base * 0.2),
-          heatwave: Math.floor(base * 0.15),
-          thunderstorm: Math.floor(base * 0.15),
-          fog: Math.floor(base * 0.1),
-          other: Math.floor(base * 0.05),
-          verified: Math.floor(base * 0.78),
-          duplicates: Math.floor(base * 0.15),
-        };
+        dailyTrends.push({
+          date: dateKey,
+          label: `${d.getDate()} ${d.toLocaleString('default', { month: 'short' })}`,
+          total: base, rainfall: Math.floor(base * 0.35), flooding: Math.floor(base * 0.2),
+          heatwave: Math.floor(base * 0.15), thunderstorm: Math.floor(base * 0.15),
+          fog: Math.floor(base * 0.1), dust_storm: 0, strong_winds: 0,
+          other: Math.floor(base * 0.05), verified: Math.floor(base * 0.78), duplicates: Math.floor(base * 0.15),
+        });
       }
-      return item;
-    });
-
-    // 2. Top 10 States by Event Count
-    const stateMap = {};
-    allEvents.forEach((ev) => {
-      if (!stateMap[ev.state]) {
-        stateMap[ev.state] = { state: ev.state, total: 0, verified: 0, fake: 0, pending: 0, duplicates: 0 };
-      }
-      stateMap[ev.state].total += 1;
-      if (ev.verificationStatus === 'verified') stateMap[ev.state].verified += 1;
-      if (ev.verificationStatus === 'fake' || ev.verificationStatus === 'misleading' || ev.isFake) stateMap[ev.state].fake += 1;
-      if (ev.verificationStatus === 'pending' || ev.verificationStatus === 'needs_review') stateMap[ev.state].pending += 1;
-      if (ev.isDuplicate) stateMap[ev.state].duplicates += 1;
-    });
-
-    const topStates = Object.values(stateMap)
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 10);
-
-    // 3. Hourly volume over last 24 hours
-    const hourlyMap = {};
-    for (let h = 0; h < 24; h++) {
-      const hourLabel = `${h.toString().padStart(2, '0')}:00`;
-      hourlyMap[hourLabel] = { hour: hourLabel, events: 0, duplicates: 0, alertLevel: 'normal' };
     }
 
-    allEvents.forEach((ev) => {
-      const h = new Date(ev.timestamp).getHours();
-      const hourLabel = `${h.toString().padStart(2, '0')}:00`;
-      if (hourlyMap[hourLabel]) {
-        hourlyMap[hourLabel].events += 1;
-        if (ev.isDuplicate) hourlyMap[hourLabel].duplicates += 1;
-      }
+    // ── 2. Top 10 States via aggregation ──────────────────────────────────────
+    const stateAgg = await WeatherEvent.aggregate([
+      {
+        $group: {
+          _id: '$state',
+          total:    { $sum: 1 },
+          verified: { $sum: { $cond: [{ $eq: ['$verificationStatus', 'verified'] }, 1, 0] } },
+          fake:     { $sum: { $cond: [{ $in: ['$verificationStatus', ['fake', 'misleading']] }, 1, 0] } },
+          pending:  { $sum: { $cond: [{ $in: ['$verificationStatus', ['pending', 'needs_review']] }, 1, 0] } },
+          duplicates: { $sum: { $cond: ['$isDuplicate', 1, 0] } },
+        },
+      },
+      { $sort: { total: -1 } },
+      { $limit: 10 },
+      { $project: { _id: 0, state: '$_id', total: 1, verified: 1, fake: 1, pending: 1, duplicates: 1 } },
+    ]);
+
+    // ── 3. Hourly volume (last 24h) via aggregation ───────────────────────────
+    const last24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const hourlyAgg = await WeatherEvent.aggregate([
+      { $match: { timestamp: { $gte: last24h } } },
+      {
+        $group: {
+          _id: { $hour: '$timestamp' },
+          events:     { $sum: 1 },
+          duplicates: { $sum: { $cond: ['$isDuplicate', 1, 0] } },
+        },
+      },
+    ]);
+    const hourlyDbMap = {};
+    hourlyAgg.forEach((row) => { hourlyDbMap[row._id] = row; });
+
+    const hourlyVolume = Array.from({ length: 24 }, (_, h) => {
+      const row = hourlyDbMap[h];
+      const label = `${h.toString().padStart(2, '0')}:00`;
+      const val = row ? row.events : Math.floor(Math.sin(h / 2) * 5 + 8);
+      return { hour: label, events: val, duplicates: row ? row.duplicates : Math.floor(val * 0.2), alertVolume: Math.floor(val * 0.4) };
     });
 
-    const hourlyVolume = Object.values(hourlyMap).map((item, idx) => {
-      const val = item.events > 0 ? item.events : Math.floor(Math.sin(idx / 2) * 5 + 8);
-      return {
-        hour: item.hour,
-        events: val,
-        duplicates: Math.floor(val * 0.2),
-        alertVolume: Math.floor(val * 0.4),
-      };
-    });
-
-    // 4. Grouped Bar: This Week vs Last Week by Event Type
+    // ── 4. Week comparison (static — no DB needed) ────────────────────────────
     const weekComparison = [
       { type: 'Rainfall', thisWeek: 32, lastWeek: 24 },
       { type: 'Flooding', thisWeek: 19, lastWeek: 11 },
@@ -202,38 +203,37 @@ router.get('/trends', async (req, res) => {
       { type: 'Strong Winds', thisWeek: 6, lastWeek: 4 },
     ];
 
-    // 5. Scatter: Verified % vs Total per State
-    const stateScatter = Object.values(stateMap).map((st) => {
-      const verifiedPct = st.total > 0 ? Number(((st.verified / st.total) * 100).toFixed(1)) : 82;
-      return {
-        state: st.state,
-        totalEvents: st.total,
-        verifiedPercentage: verifiedPct,
-        fakeCount: st.fake,
-      };
-    });
+    // ── 5. State scatter from stateAgg ───────────────────────────────────────
+    const stateScatter = stateAgg.map((st) => ({
+      state: st.state,
+      totalEvents: st.total,
+      verifiedPercentage: st.total > 0 ? Number(((st.verified / st.total) * 100).toFixed(1)) : 82,
+      fakeCount: st.fake,
+    }));
 
-    // 6. Stacked 7-day trend for dashboard
-    const last7Days = dailyTrends.slice(-7);
-
-    // 7. Duplicate detection stats summary
+    // ── 6. Duplicate stats ────────────────────────────────────────────────────
+    const [dupResult] = await WeatherEvent.aggregate([
+      { $group: { _id: null, totalDuplicates: { $sum: { $cond: ['$isDuplicate', 1, 0] } } } },
+    ]);
     const duplicateStats = {
-      totalDuplicates: allEvents.filter((e) => e.isDuplicate).length,
+      totalDuplicates: dupResult ? dupResult.totalDuplicates : 0,
       averageSimilarity: 88.5,
       clusteringRatio: '3.4 reports / cluster',
       storageSavedKb: 480,
     };
 
-    res.json({
-      success: true,
+    const payload = {
       dailyTrends,
-      topStates,
+      topStates: stateAgg,
       hourlyVolume,
       weekComparison,
       stateScatter,
-      last7Days,
+      last7Days: dailyTrends.slice(-7),
       duplicateStats,
-    });
+    };
+
+    setCache(cacheKey, payload);
+    res.json({ success: true, ...payload });
   } catch (error) {
     console.error('Analytics trends error:', error);
     res.status(500).json({ success: false, message: 'Failed to retrieve analytics trends', error: error.message });
@@ -241,75 +241,92 @@ router.get('/trends', async (req, res) => {
 });
 
 // @route   GET /api/analytics/sources
-// @desc    Get multi-source data ingestion breakdown (all 6 streams)
+// @desc    Get multi-source data ingestion breakdown via aggregation
 // @access  Public / Protected
 router.get('/sources', async (req, res) => {
   try {
-    const [twitter, imd, openweather, citizen, news, publicDataset] = await Promise.all([
-      WeatherEvent.countDocuments({ source: 'twitter' }),
-      WeatherEvent.countDocuments({ source: 'imd_api' }),
-      WeatherEvent.countDocuments({ source: 'openweather' }),
-      WeatherEvent.countDocuments({ source: 'citizen' }),
-      WeatherEvent.countDocuments({ source: 'news_web' }),
-      WeatherEvent.countDocuments({ source: 'public_dataset' }),
-    ]);
+    const cached = getCache('sources');
+    if (cached) return res.json({ success: true, ...cached, _cached: true });
 
-    const total = (twitter + imd + openweather + citizen + news + publicDataset) || 1;
+    const sourceAgg = await WeatherEvent.aggregate([
+      { $group: { _id: '$source', count: { $sum: 1 } } },
+    ]);
+    const sourceMap = {};
+    sourceAgg.forEach((row) => { sourceMap[row._id] = row.count; });
+
+    const total = sourceAgg.reduce((s, r) => s + r.count, 0) || 1;
 
     const sources = [
-      { name: 'IMD AWS & Radar Doppler API', key: 'imd_api', count: imd || 24, percentage: Number((((imd || 24) / total) * 100).toFixed(1)), color: '#E8640C', type: 'Official Weather Stream', isSimulated: false },
-      { name: 'Social Media Feed (Twitter/X)', key: 'twitter', count: twitter || 18, percentage: Number((((twitter || 18) / total) * 100).toFixed(1)), color: '#1DA1F2', type: 'Demo Stream (Live Simulated)', isSimulated: true },
-      { name: 'OpenWeather Global API', key: 'openweather', count: openweather || 14, percentage: Number((((openweather || 14) / total) * 100).toFixed(1)), color: '#10B981', type: 'Satellite Meteorological API', isSimulated: false },
-      { name: 'News & Web Ingestion', key: 'news_web', count: news || 10, percentage: Number((((news || 10) / total) * 100).toFixed(1)), color: '#F59E0B', type: 'Simulated Ingestion Crawler', isSimulated: true },
-      { name: 'Citizen Eyewitness Reports', key: 'citizen', count: citizen || 8, percentage: Number((((citizen || 8) / total) * 100).toFixed(1)), color: '#8B5CF6', type: 'Public Crowdsource Grid', isSimulated: false },
-      { name: 'Public Weather Datasets', key: 'public_dataset', count: publicDataset || 12, percentage: Number((((publicDataset || 12) / total) * 100).toFixed(1)), color: '#0284C7', type: 'Historical Climate Datasets', isSimulated: false },
-    ];
+      { name: 'IMD AWS & Radar Doppler API',       key: 'imd_api',        count: sourceMap['imd_api'] || 24,        color: '#E8640C', type: 'Official Weather Stream',          isSimulated: false },
+      { name: 'Social Media Feed (Twitter/X)',      key: 'twitter',        count: sourceMap['twitter'] || 18,        color: '#1DA1F2', type: 'Demo Stream (Live Simulated)',      isSimulated: true  },
+      { name: 'OpenWeather Global API',             key: 'openweather',    count: sourceMap['openweather'] || 14,    color: '#10B981', type: 'Satellite Meteorological API',      isSimulated: false },
+      { name: 'News & Web Ingestion',               key: 'news_web',       count: sourceMap['news_web'] || 10,       color: '#F59E0B', type: 'Simulated Ingestion Crawler',       isSimulated: true  },
+      { name: 'Citizen Eyewitness Reports',         key: 'citizen',        count: sourceMap['citizen'] || 8,         color: '#8B5CF6', type: 'Public Crowdsource Grid',           isSimulated: false },
+      { name: 'Public Weather Datasets',            key: 'public_dataset', count: sourceMap['public_dataset'] || 12, color: '#0284C7', type: 'Historical Climate Datasets',       isSimulated: false },
+    ].map((s) => ({ ...s, percentage: Number(((s.count / total) * 100).toFixed(1)) }));
 
-    res.json({
-      success: true,
-      total,
-      sources,
-    });
+    const payload = { total, sources };
+    setCache('sources', payload);
+    res.json({ success: true, ...payload });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to retrieve source breakdown', error: error.message });
   }
 });
 
 // @route   GET /api/analytics/ai-stats
-// @desc    Get comprehensive AI Intelligence processing metrics
+// @desc    Get AI Intelligence processing metrics via single facet aggregation
 // @access  Public / Protected
 router.get('/ai-stats', async (req, res) => {
   try {
-    const [total, verified, fake, pending, duplicates] = await Promise.all([
-      WeatherEvent.countDocuments({}),
-      WeatherEvent.countDocuments({ verificationStatus: 'verified' }),
-      WeatherEvent.countDocuments({ $or: [{ verificationStatus: 'fake' }, { verificationStatus: 'misleading' }, { isFake: true }] }),
-      WeatherEvent.countDocuments({ $or: [{ verificationStatus: 'pending' }, { verificationStatus: 'needs_review' }] }),
-      WeatherEvent.countDocuments({ isDuplicate: true }),
+    const cached = getCache('ai-stats');
+    if (cached) return res.json({ success: true, ...cached, _cached: true });
+
+    const [result] = await WeatherEvent.aggregate([
+      {
+        $facet: {
+          total:      [{ $count: 'n' }],
+          verified:   [{ $match: { verificationStatus: 'verified' } }, { $count: 'n' }],
+          fake:       [{ $match: { $or: [{ verificationStatus: 'fake' }, { verificationStatus: 'misleading' }, { isFake: true }] } }, { $count: 'n' }],
+          duplicates: [{ $match: { isDuplicate: true } }, { $count: 'n' }],
+          pending:    [{ $match: { $or: [{ verificationStatus: 'pending' }, { verificationStatus: 'needs_review' }] } }, { $count: 'n' }],
+        },
+      },
     ]);
 
-    res.json({
-      success: true,
-      stats: {
-        totalProcessed: total + (duplicates * 2),
-        verifiedCount: verified,
-        flaggedMisleading: fake,
-        duplicatesDetected: duplicates,
-        pendingReview: pending,
-        accuracyScore: '92.4%',
-        averageProcessingLatencyMs: 42,
-        pipelineStages: [
-          { name: 'Data Ingestion & Normalization', throughput: '1,240 msg/s', status: 'Optimal' },
-          { name: 'Hashtag & Named Entity Recognition', throughput: '1,190 msg/s', status: 'Optimal' },
-          { name: 'NLP Multi-Hazard Classifier', throughput: '980 msg/s', status: 'Optimal' },
-          { name: 'Spatial-Temporal Deduplication', throughput: '860 msg/s', status: 'Optimal' },
-          { name: 'Authenticity Scoring Engine', throughput: '920 msg/s', status: 'Optimal' },
-        ],
-      },
-    });
+    const n = (arr) => (arr && arr[0] ? arr[0].n : 0);
+    const total = n(result.total), verified = n(result.verified),
+          fake = n(result.fake), duplicates = n(result.duplicates), pending = n(result.pending);
+
+    const stats = {
+      totalProcessed: total + duplicates * 2,
+      verifiedCount: verified,
+      flaggedMisleading: fake,
+      duplicatesDetected: duplicates,
+      pendingReview: pending,
+      accuracyScore: '92.4%',
+      averageProcessingLatencyMs: 42,
+      pipelineStages: [
+        { name: 'Data Ingestion & Normalization',          throughput: '1,240 msg/s', status: 'Optimal' },
+        { name: 'Hashtag & Named Entity Recognition',      throughput: '1,190 msg/s', status: 'Optimal' },
+        { name: 'NLP Multi-Hazard Classifier',             throughput: '980 msg/s',   status: 'Optimal' },
+        { name: 'Spatial-Temporal Deduplication',          throughput: '860 msg/s',   status: 'Optimal' },
+        { name: 'Authenticity Scoring Engine',             throughput: '920 msg/s',   status: 'Optimal' },
+      ],
+    };
+
+    setCache('ai-stats', { stats });
+    res.json({ success: true, stats });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to retrieve AI stats', error: error.message });
   }
+});
+
+// @route   POST /api/analytics/cache/clear
+// @desc    Manually clear analytics cache (admin use)
+// @access  Public
+router.post('/cache/clear', (req, res) => {
+  Object.keys(cache).forEach((k) => delete cache[k]);
+  res.json({ success: true, message: 'Analytics cache cleared.' });
 });
 
 module.exports = router;
