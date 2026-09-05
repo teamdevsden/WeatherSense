@@ -50,9 +50,11 @@ export const AuthProvider = ({ children }) => {
         }
         return { success: true, user: receivedUser };
       }
-      return { success: false, message: 'Invalid response from server' };
+      const msg = res.data?.message || 'Invalid response from server';
+      if (showToast) toast.error(msg);
+      return { success: false, message: msg };
     } catch (error) {
-      const msg = error.response?.data?.message || 'Login failed. Please check credentials.';
+      const msg = error.response?.data?.message || error.message || 'Login failed. Please check credentials.';
       if (showToast) {
         toast.error(msg);
       }
@@ -60,7 +62,7 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  const quickLogin = async (role = 'admin', showToast = false) => {
+  const quickLogin = async (role = 'admin', showToast = true) => {
     if (role === 'admin') {
       return await login('admin@imd.gov.in', 'admin123', showToast);
     } else {

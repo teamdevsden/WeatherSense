@@ -19,7 +19,7 @@ const Login = () => {
     }
 
     setIsLoading(true);
-    const result = await login(email, password);
+    const result = await login(email, password, true);
     setIsLoading(false);
 
     if (result.success) {
@@ -33,15 +33,12 @@ const Login = () => {
 
   const handleQuickLoginClick = async (role) => {
     setIsLoading(true);
-    if (role === 'admin') {
-      setEmail('admin@imd.gov.in');
-      setPassword('admin123');
-    } else {
-      setEmail('citizen@demo.com');
-      setPassword('citizen123');
-    }
+    const targetEmail = role === 'admin' ? 'admin@imd.gov.in' : 'citizen@demo.com';
+    const targetPassword = role === 'admin' ? 'admin123' : 'citizen123';
+    setEmail(targetEmail);
+    setPassword(targetPassword);
 
-    const result = await quickLogin(role);
+    const result = await quickLogin(role, true);
     setIsLoading(false);
 
     if (result.success) {
